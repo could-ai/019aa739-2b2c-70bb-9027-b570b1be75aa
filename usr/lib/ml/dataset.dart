@@ -1,3 +1,6 @@
+import 'package:excel/excel.dart';
+import 'dart:typed_data';
+
 class TennisDataset {
   // Raw data: Outlook, Temperature, Humidity, Wind, PlayTennis
   static List<Map<String, String>> defaultData = [
@@ -55,15 +58,69 @@ class TennisDataset {
     List<int> y = [];
 
     for (var row in rawData) {
-      X.add(encode(
-        row['Outlook']!,
-        row['Temperature']!,
-        row['Humidity']!,
-        row['Wind']!,
-      ));
-      y.add(row['Play'] == 'Yes' ? 1 : 0);
+      // Ensure we handle potential missing or messy data gracefully
+      String outlook = row['Outlook'] ?? 'Sunny';
+      String temp = row['Temperature'] ?? 'Mild';
+      String humidity = row['Humidity'] ?? 'Normal';
+      String wind = row['Wind'] ?? 'Weak';
+      String play = row['Play'] ?? 'No';
+
+      X.add(encode(outlook, temp, humidity, wind));
+      y.add(play == 'Yes' ? 1 : 0);
     }
 
     return {'X': X, 'y': y};
+  }
+
+  // Parse Excel file bytes into a list of maps
+  static Future<List<Map<String, String>>> parseExcel(Uint8List bytes) async {
+    var excel = Excel.decodeBytes(bytes);
+    List<Map<String, String>> newData = [];
+
+    // Assume the first sheet contains the data
+    // and the first row is the header: Outlook, Temperature, Humidity, Wind, Play
+    for (var table in excel.tables.keys) {
+      var sheet = excel.tables[table];
+      if (sheet == null) continue;
+
+      bool isHeader = true;
+      Map<int, String> headers = {};
+
+      for (var row in sheet.rows) {
+        if (isHeader) {
+          // Map column index to header name
+          for (int i = 0; i < row.length; i++) {
+            var cellValue = row[i]?.value?.toString().trim();
+            if (cellValue != null) {
+              headers[i] = cellValue;
+            }
+          }
+          isHeader = false;
+        } else {
+          // Data row
+          Map<String, String> rowData = {};
+          bool hasData = false;
+          for (int i = 0; i < row.length; i++) {
+            if (headers.containsKey(i)) {
+              var val = row[i]?.value?.toString().trim() ?? '';
+              rowData[headers[i]!] = val;
+              if (val.isNotEmpty) hasData = true;
+            }
+          }
+          // Only add if we have valid keys and some data
+          if (hasData &&
+              rowData.containsKey('Outlook') &&
+              rowData.containsKey('Temperature') &&
+              rowData.containsKey('Humidity') &&
+              rowData.containsKey('Wind') &&
+              rowData.containsKey('Play')) {
+            newData.add(rowData);
+          }
+        }
+      }
+      // Just process the first table/sheet
+      break; 
+    }
+    return newData;
   }
 }

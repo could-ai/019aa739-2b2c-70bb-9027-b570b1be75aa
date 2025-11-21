@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'dart:typed_data';
 import 'ml/dataset.dart';
 import 'ml/logistic_regression.dart';
 
@@ -65,6 +67,50 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Future<void> _importExcel() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['xlsx', 'xls'],
+        withData: true, // Important for web to get bytes
+      );
+
+      if (result != null) {
+        Uint8List? fileBytes = result.files.first.bytes;
+        if (fileBytes != null) {
+          List<Map<String, String>> newData = await TennisDataset.parseExcel(fileBytes);
+          
+          if (newData.isNotEmpty) {
+            setState(() {
+              _data = newData;
+              _isTrained = false; // Reset training status
+              _lastPredictionResult = null; // Reset prediction
+            });
+            _trainModel(); // Retrain with new data
+            
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Imported ${newData.length} rows from Excel!')),
+              );
+            }
+          } else {
+             if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('No valid data found in Excel. Check column names.')),
+              );
+            }
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error importing file: $e')),
+        );
+      }
+    }
+  }
+
   void _predict() {
     if (!_isTrained) return;
 
@@ -88,7 +134,7 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tennis Predictor (Logistic Regression)'),
+        title: const Text('Tennis Predictor'),
         backgroundColor: Colors.green.shade100,
       ),
       body: SingleChildScrollView(
@@ -102,7 +148,7 @@ class _HomePageState extends State<HomePage> {
                 padding: EdgeInsets.all(16.0),
                 child: Text(
                   'This app uses Logistic Regression to predict if you can play tennis based on weather conditions. '
-                  'The model is trained on the dataset below.',
+                  'The model is trained on the dataset below. You can import your own Excel file to retrain the model.',
                   style: TextStyle(fontSize: 16),
                 ),
               ),
@@ -188,11 +234,21 @@ class _HomePageState extends State<HomePage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Training Data', style: Theme.of(context).textTheme.headlineSmall),
-                TextButton.icon(
-                  onPressed: _trainModel,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Retrain Model'),
+                Text('Training Data (${_data.length} rows)', style: Theme.of(context).textTheme.headlineSmall),
+                Row(
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _importExcel,
+                      icon: const Icon(Icons.upload_file),
+                      label: const Text('Import Excel'),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton.icon(
+                      onPressed: _trainModel,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retrain'),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -212,10 +268,10 @@ class _HomePageState extends State<HomePage> {
                   final play = row['Play'] == 'Yes';
                   return DataRow(
                     cells: [
-                      DataCell(Text(row['Outlook']!)),
-                      DataCell(Text(row['Temperature']!)),
-                      DataCell(Text(row['Humidity']!)),
-                      DataCell(Text(row['Wind']!)),
+                      DataCell(Text(row['Outlook'] ?? '')),
+                      DataCell(Text(row['Temperature'] ?? '')),
+                      DataCell(Text(row['Humidity'] ?? '')),
+                      DataCell(Text(row['Wind'] ?? '')),
                       DataCell(
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -224,7 +280,7 @@ class _HomePageState extends State<HomePage> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
-                            row['Play']!,
+                            row['Play'] ?? '',
                             style: TextStyle(
                               color: play ? Colors.green.shade800 : Colors.red.shade800,
                               fontWeight: FontWeight.bold,
